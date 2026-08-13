@@ -1,0 +1,203 @@
+#!/usr/bin/env python3
+"""recpt1-style client for the experimental persistent U3 backend."""
+
+from __future__ import annotations
+
+import argparse
+import contextlib
+import hashlib
+import os
+import re
+import socket
+import sys
+from pathlib import Path
+
+from u3_channels import parse_u3_channel
+from u3_streaming import (
+    StreamStats, decryptor, detect_graph_row, packet_stream, transform_packet,
+)
+
+
+VERSION = "recpt1-u3 0.3"
+
+
+def parse_record_time(value: str) -> int:
+    """Return seconds; zero represents an indefinite daemon request."""
+    if value == "-":
+        return 0
+    if value.isdigit():
+        seconds = int(value)
+        if seconds > 0:
+            return seconds
+        raise ValueError("recording time must be positive or '-'")
+    if ":" in value:
+        fields = value.split(":")
+        if len(fields) not in (2, 3) or any(not field.isdigit() for field in fields):
+            raise ValueError("invalid colon recording time")
+        numbers = [int(field) for field in fields]
+        if len(numbers) == 2:
+            hours, minutes, seconds = 0, numbers[0], numbers[1]
+        else:
+            hours, minutes, seconds = numbers
+        if minutes >= 60 or seconds >= 60:
+            raise ValueError("minutes and seconds must be below 60")
+        total = hours * 3600 + minutes * 60 + seconds
+        if total > 0:
+            return total
+        raise ValueError("recording time must be positive")
+    match = re.fullmatch(
+        r"(?:(\d+)[Hh])?(?:(\d+)[Mm])?(?:(\d+)[Ss]?)?", value
+    )
+    if match and any(part is not None for part in match.groups()):
+        hours, minutes, seconds = (int(part or 0) for part in match.groups())
+        total = hours * 3600 + minutes * 60 + seconds
+        if total > 0:
+            return total
+    raise ValueError(f"invalid recording time: {value}")
+
+
+def receive_line(connection: socket.socket, limit: int = 256) -> str:
+    data = bytearray()
+    while len(data) < limit:
+        byte = connection.recv(1)
+        if not byte:
+            raise RuntimeError("u3d closed before its response")
+        if byte == b"\n":
+            return data.decode("ascii", "replace")
+        data += byte
+    raise RuntimeError("u3d response was too long")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(
+        description=__doc__, usage="%(prog)s [options] channel rectime destfile"
+    )
+    parser.add_argument(
+        "--socket", type=Path,
+        default=Path(os.environ.get("U3_SOCKET", "/tmp/u3.sock")),
+    )
+    parser.add_argument("--device", type=Path, dest="device_socket")
+    parser.add_argument("--b25", action="store_true")
+    parser.add_argument("--strip", action="store_true")
+    parser.add_argument("--sid")
+    parser.add_argument("--version", action="store_true")
+    parser.add_argument("--dry-run", action="store_true")
+    parser.add_argument("channel", nargs="?")
+    parser.add_argument("rectime", nargs="?")
+    parser.add_argument("destfile", nargs="?")
+    args = parser.parse_args()
+
+    if args.version:
+        print(VERSION)
+        return 0
+    if None in (args.channel, args.rectime, args.destfile):
+        parser.error("channel, rectime, and destfile are required")
+    try:
+        channel = parse_u3_channel(args.channel)
+    except ValueError as error:
+        parser.error(str(error))
+    try:
+        seconds = parse_record_time(args.rectime)
+    except ValueError as error:
+        parser.error(str(error))
+    if args.b25 or args.strip or args.sid:
+        parser.error(
+            "--b25/--strip/--sid are not implemented; place an external B25 "
+            "stage after the standard TS output"
+        )
+    socket_path = args.device_socket or args.socket
+    if args.dry_run:
+        print(
+            f"socket={socket_path} channel={channel.canonical} "
+            f"seconds={'indefinite' if seconds == 0 else seconds} "
+            f"output={args.destfile}"
+        )
+        return 0
+
+    output_path = None if args.destfile == "-" else Path(args.destfile)
+    if output_path is not None:
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+    target_context = (
+        contextlib.nullcontext(sys.stdout.buffer)
+        if output_path is None else output_path.open("wb")
+    )
+
+    connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    try:
+        connection.connect(str(socket_path))
+        connection.sendall(
+            f"RECORD {channel.canonical} {seconds}\n".encode("ascii")
+        )
+        response = receive_line(connection)
+        if response != "OK":
+            print(f"u3d rejected recording: {response}", file=sys.stderr)
+            return 2
+        source = connection.makefile("rb", buffering=0)
+        cipher = None
+        selected_row = None
+        selected_mask = None
+        pending: list[bytes] = []
+        stats = StreamStats()
+        digest = hashlib.sha256()
+        print(
+            f"recording {channel.canonical} for "
+            f"{'until signal' if seconds == 0 else f'{seconds}s'} from {socket_path}",
+            file=sys.stderr, flush=True,
+        )
+        with source, target_context as target:
+            for packet in packet_stream(source, stats):
+                if cipher is None:
+                    pending.append(packet)
+                    selection = detect_graph_row((packet,))
+                    if selection is None:
+                        if len(pending) > 65_536:
+                            raise RuntimeError(
+                                "no CRC-valid PAT found while detecting graph row"
+                            )
+                        continue
+                    selected_row, _key, selected_mask, programs = selection
+                    cipher = decryptor(selected_row)
+                    print(
+                        f"detected U3 graph row {selected_row}; PAT programs="
+                        + ",".join(map(str, sorted(programs))),
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    queued, pending = pending, []
+                    for queued_packet in queued:
+                        standard = transform_packet(
+                            queued_packet, cipher, selected_mask
+                        )
+                        target.write(standard)
+                        digest.update(standard)
+                    continue
+                standard = transform_packet(packet, cipher, selected_mask)
+                target.write(standard)
+                digest.update(standard)
+            if cipher is None:
+                raise RuntimeError("stream ended before a CRC-valid PAT selected a graph row")
+            target.flush()
+            cipher.finalize()
+    except KeyboardInterrupt:
+        print("recording interrupted", file=sys.stderr)
+        return 130
+    except BrokenPipeError:
+        return 0
+    except (OSError, RuntimeError, ValueError) as error:
+        print(f"recpt1-u3: {error}", file=sys.stderr)
+        return 2
+    finally:
+        connection.close()
+
+    print(
+        f"recording complete: packets={stats.packets} bytes={stats.packets * 188} "
+        f"resync_gaps={len(stats.gaps)} "
+        f"skipped={sum(length for _, length in stats.gaps)} "
+        f"trailing={stats.trailing} sha256={digest.hexdigest()}",
+        file=sys.stderr,
+    )
+    return 0 if stats.packets else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

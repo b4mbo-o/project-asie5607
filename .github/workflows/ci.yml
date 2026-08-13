@@ -1,0 +1,20 @@
+name: ci
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install system dependencies
+        run: sudo apt-get update && sudo apt-get install -y libusb-1.0-0-dev
+      - name: Install Python dependencies
+        run: python3 -m pip install -r requirements.txt
+      - name: Build and test
+        run: make test

@@ -1,0 +1,8 @@
+{
+  "format": "hduc-mode6-material-v1",
+  "architecture": "x64",
+  "driver_version": "1.9.10.20",
+  "rotated_state": "f27cbbdd4c06a6586f44afdc38acee41",
+  "aes_key": "38f206ac4c416f7c44ddafbba658eedc",
+  "block_xor_mask": "41ee7cee7c7c41ee41ee7cee7c7cee06"
+}

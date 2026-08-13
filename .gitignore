@@ -1,0 +1,25 @@
+# Never publish driver packages, captures, broadcast data, debugger dumps,
+# card material, or private keys from this repository.
+*.sys
+*.dll
+*.exe
+*.msi
+*.cab
+*.cat
+*.inf
+*.bin
+*.pcap
+*.pcapng
+*.ts
+*.key
+*.pem
+id_rsa*
+id_ed25519*
+
+# Generated files
+__pycache__/
+*.py[cod]
+.venv/
+/tools/hduc_ctl/hduc_ctl
+*.o
+*.capture-ready

@@ -1,0 +1,364 @@
+#!/usr/bin/env python3
+"""Initialize one U3 and keep its raw EP81 stream behind a Unix socket."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import select
+import signal
+import socket
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+from u3_channels import U3Channel, parse_u3_channel
+from u3_control_template import load_control_template
+from u3_persistent_retune import retune_u3_channel
+
+
+ROOT = Path(__file__).resolve().parents[1]
+DEFAULT_CTL = ROOT / "tools" / "hduc_ctl" / "hduc_ctl"
+DEFAULT_FIRMWARE = ROOT / "firmware" / "as11loader_decrypted_full.bin"
+DEFAULT_TEMPLATE = ROOT / "templates" / "u3_good2_terrestrial.json"
+RUNNER = ROOT / "scripts" / "run_u3_full_secure_terrestrial.py"
+RUNTIME_SECONDS = 2_147_483_647
+
+
+def socket_is_live(path: Path) -> bool:
+    if not path.exists():
+        return False
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.settimeout(0.25)
+    try:
+        probe.connect(str(path))
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
+
+
+def read_line(connection: socket.socket, limit: int = 256) -> str:
+    data = bytearray()
+    while len(data) < limit:
+        byte = connection.recv(1)
+        if not byte:
+            raise RuntimeError("client closed before command")
+        if byte == b"\n":
+            return data.decode("ascii", "replace")
+        data += byte
+    raise RuntimeError("client command too long")
+
+
+def stop_child(child: subprocess.Popen | None) -> None:
+    if child is None or child.poll() is not None:
+        return
+    try:
+        os.killpg(child.pid, signal.SIGTERM)
+        child.wait(timeout=5)
+    except (ProcessLookupError, subprocess.TimeoutExpired):
+        if child.poll() is None:
+            os.killpg(child.pid, signal.SIGKILL)
+            child.wait()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--socket", type=Path,
+        default=Path(os.environ.get("U3_SOCKET", "/tmp/u3.sock")),
+    )
+    parser.add_argument("--bus", type=int, default=int(os.environ.get("U3_BUS", "2")))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("U3_PORT", "2")))
+    parser.add_argument("--channel", type=int, default=21)
+    parser.add_argument("--hduc", type=Path, default=DEFAULT_CTL)
+    parser.add_argument("--firmware", type=Path, default=DEFAULT_FIRMWARE)
+    parser.add_argument("--template", type=Path, default=DEFAULT_TEMPLATE)
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+
+    if not 13 <= args.channel <= 62:
+        parser.error("--channel must be a terrestrial physical channel in 13..62")
+    if args.dry_run:
+        print(
+            f"bus={args.bus} port={args.port} channel={args.channel} "
+            f"socket={args.socket} template={args.template} "
+            f"firmware={args.firmware}"
+        )
+        return 0
+    for required in (args.hduc, args.firmware, args.template, RUNNER):
+        if not required.is_file():
+            parser.error(f"required file is missing: {required}")
+    commands = load_control_template(args.template)
+    if socket_is_live(args.socket):
+        print(f"u3d is already listening on {args.socket}", file=sys.stderr)
+        return 2
+    if args.socket.exists():
+        args.socket.unlink()
+
+    initialize = [
+        sys.executable, "-u", str(RUNNER),
+        "--bus", str(args.bus), "--port", str(args.port),
+        "--channel", str(args.channel), "--prepare-server",
+        "--hduc", str(args.hduc), "--firmware", str(args.firmware),
+        "--template", str(args.template),
+    ]
+    print("+", " ".join(initialize), file=sys.stderr, flush=True)
+    result = subprocess.run(initialize, cwd=ROOT)
+    if result.returncode:
+        print(f"U3 initialization failed (exit={result.returncode})", file=sys.stderr)
+        return 2
+
+    listen = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    read_fd = write_fd = -1
+    child: subprocess.Popen | None = None
+    client: socket.socket | None = None
+    retune_thread: threading.Thread | None = None
+    retune_connection: socket.socket | None = None
+    retune_target: U3Channel | None = None
+    retune_seconds = 0
+    retune_result: dict[str, object] = {}
+    current_channel: U3Channel | None = parse_u3_channel(args.channel)
+    try:
+        listen.bind(str(args.socket))
+        listen.listen(4)
+        read_fd, write_fd = os.pipe()
+        os.set_blocking(read_fd, False)
+        output_path = f"/proc/self/fd/{write_fd}"
+        receive = [
+            str(args.hduc), "async-bulk", "--vid", "0x3275", "--pid", "0x9010",
+            "--ep", "0x81", "--buffers", "8", "--size", "8192",
+            "--seconds", str(RUNTIME_SECONDS), "--start", "0x06",
+            "--hduc-post-start", "--out", output_path,
+            "--bus", str(args.bus), "--port", str(args.port),
+        ]
+        print("+", " ".join(receive), file=sys.stderr, flush=True)
+        child = subprocess.Popen(
+            receive, cwd=ROOT, pass_fds=(write_fd,), start_new_session=True
+        )
+        os.close(write_fd)
+        write_fd = -1
+
+        first_payload = b""
+        deadline = time.monotonic() + 10
+        while time.monotonic() < deadline and child.poll() is None:
+            ready, _, _ = select.select([read_fd], [], [], 0.25)
+            if ready:
+                first_payload = os.read(read_fd, 1024 * 1024)
+                if first_payload:
+                    break
+        if not first_payload:
+            print("U3 EP81 did not produce data for the persistent server", file=sys.stderr)
+            return 2
+
+        print(
+            f"U3 server ready: socket={args.socket} bus={args.bus} "
+            f"port={args.port} channel={current_channel.canonical}; EP81 remains queued",
+            flush=True,
+        )
+        client_deadline = 0.0
+        bytes_forwarded = 0
+        while child.poll() is None:
+            now = time.monotonic()
+
+            if retune_thread is not None and not retune_thread.is_alive():
+                retune_thread.join()
+                incoming = retune_connection
+                target = retune_target
+                error = retune_result.get("error")
+                if error is not None:
+                    if retune_result.get("rollback_error") is not None:
+                        current_channel = None
+                    if incoming is not None:
+                        try:
+                            incoming.sendall(
+                                f"ERR retune failed: {error}\n".encode(
+                                    "ascii", "replace"
+                                )
+                            )
+                        except OSError:
+                            pass
+                        incoming.close()
+                    print(
+                        "U3 server retune failed: target="
+                        f"{target.canonical if target else 'unknown'} error={error}",
+                        file=sys.stderr,
+                        flush=True,
+                    )
+                    if retune_result.get("rollback_error") is not None:
+                        print(
+                            "U3 server rollback failed: "
+                            f"{retune_result['rollback_error']}",
+                            file=sys.stderr,
+                            flush=True,
+                        )
+                else:
+                    current_channel = target
+                    if incoming is not None:
+                        try:
+                            incoming.sendall(b"OK\n")
+                            incoming.settimeout(2)
+                            client = incoming
+                            client_deadline = (
+                                time.monotonic() + retune_seconds
+                                if retune_seconds else 0
+                            )
+                            bytes_forwarded = 0
+                            print(
+                                f"U3 server client: channel={target.canonical if target else 'unknown'} "
+                                f"seconds={retune_seconds or 'until-disconnect'}",
+                                flush=True,
+                            )
+                        except OSError:
+                            incoming.close()
+                retune_thread = None
+                retune_connection = None
+                retune_target = None
+                retune_seconds = 0
+                retune_result = {}
+
+            if client is not None and client_deadline and now >= client_deadline:
+                try:
+                    client.shutdown(socket.SHUT_RDWR)
+                except OSError:
+                    pass
+                client.close()
+                client = None
+                client_deadline = 0
+
+            readers: list[int | socket.socket] = [read_fd, listen]
+            if client is not None:
+                readers.append(client)
+            ready, _, _ = select.select(readers, [], [], 0.1)
+
+            if listen in ready:
+                incoming, _ = listen.accept()
+                incoming.settimeout(2)
+                if client is not None or retune_thread is not None:
+                    incoming.sendall(b"ERR busy\n")
+                    incoming.close()
+                else:
+                    try:
+                        fields = read_line(incoming).split()
+                        if len(fields) != 3 or fields[0] != "RECORD":
+                            raise ValueError("expected RECORD channel seconds")
+                        channel = parse_u3_channel(fields[1])
+                        seconds = int(fields[2])
+                        if seconds < 0:
+                            raise ValueError("seconds must be non-negative")
+                        if channel == current_channel:
+                            incoming.sendall(b"OK\n")
+                            incoming.settimeout(2)
+                            client = incoming
+                            client_deadline = now + seconds if seconds else 0
+                            bytes_forwarded = 0
+                            print(
+                                f"U3 server client: channel={channel.canonical} "
+                                f"seconds={seconds or 'until-disconnect'}",
+                                flush=True,
+                            )
+                        else:
+                            previous_channel = current_channel
+                            retune_connection = incoming
+                            retune_target = channel
+                            retune_seconds = seconds
+                            retune_result = {}
+
+                            def retune_worker(
+                                target: U3Channel = channel,
+                                previous: U3Channel | None = previous_channel,
+                                result: dict[str, object] = retune_result,
+                            ) -> None:
+                                try:
+                                    if previous is None:
+                                        raise RuntimeError("current U3 channel is unknown")
+                                    frequency_khz, tuner_word = retune_u3_channel(
+                                        args.hduc, commands, args.bus, args.port,
+                                        previous, target,
+                                    )
+                                    result["frequency_khz"] = frequency_khz
+                                    result["tuner_word"] = tuner_word
+                                except Exception as error:  # subprocess details retained
+                                    result["error"] = error
+                                    if previous is not None:
+                                        try:
+                                            retune_u3_channel(
+                                                args.hduc, commands, args.bus, args.port,
+                                                target, previous,
+                                                monitor_seconds=0,
+                                            )
+                                        except Exception as rollback_error:
+                                            result["rollback_error"] = rollback_error
+
+                            retune_thread = threading.Thread(
+                                target=retune_worker,
+                                name=f"u3-retune-{channel.canonical}",
+                                daemon=True,
+                            )
+                            retune_thread.start()
+                            print(
+                                "U3 server retuning: "
+                                f"{previous_channel.canonical if previous_channel else 'unknown'} "
+                                f"-> {channel.canonical}; "
+                                "EP81 remains queued",
+                                flush=True,
+                            )
+                    except (OSError, ValueError, RuntimeError) as error:
+                        try:
+                            incoming.sendall(f"ERR {error}\n".encode("ascii", "replace"))
+                        except OSError:
+                            pass
+                        incoming.close()
+
+            if client is not None and client in ready:
+                try:
+                    if not client.recv(1, socket.MSG_PEEK):
+                        client.close()
+                        client = None
+                        client_deadline = 0
+                except OSError:
+                    client.close()
+                    client = None
+                    client_deadline = 0
+
+            if read_fd in ready:
+                chunk = os.read(read_fd, 1024 * 1024)
+                if not chunk:
+                    break
+                if client is not None:
+                    try:
+                        client.sendall(chunk)
+                        bytes_forwarded += len(chunk)
+                    except OSError:
+                        client.close()
+                        client = None
+                        client_deadline = 0
+                        print(
+                            f"U3 server client disconnected after {bytes_forwarded} raw bytes",
+                            flush=True,
+                        )
+    except KeyboardInterrupt:
+        return 130
+    finally:
+        if client is not None:
+            client.close()
+        if retune_connection is not None:
+            retune_connection.close()
+        if retune_thread is not None and retune_thread.is_alive():
+            retune_thread.join(timeout=10)
+        listen.close()
+        stop_child(child)
+        if read_fd >= 0:
+            os.close(read_fd)
+        if write_fd >= 0:
+            os.close(write_fd)
+        if args.socket.exists():
+            args.socket.unlink()
+    return 0 if child is not None and child.returncode in (None, 0, -signal.SIGTERM) else 2
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

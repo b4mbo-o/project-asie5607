@@ -1,0 +1,160 @@
+#!/usr/bin/env python3
+"""Initialize one HDUC and keep it available to recpt1-hduc clients."""
+
+from __future__ import annotations
+
+import argparse
+import os
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+import usb.core
+
+
+ROOT = Path(__file__).resolve().parents[1]
+CTL = ROOT / "tools" / "hduc_ctl" / "hduc_ctl"
+DEFAULT_FIRMWARE = ROOT / "firmware" / "as11loader_decrypted_full.bin"
+DEFAULT_MANIFEST = ROOT / "data" / "hduc-x64-init.json"
+LOADER = (0x1738, 0x5211)
+RUNTIME = (0x3275, 0x7080)
+
+
+def find_device(identity: tuple[int, int], bus: int, port: int):
+    for device in usb.core.find(
+        find_all=True, idVendor=identity[0], idProduct=identity[1]
+    ) or []:
+        if getattr(device, "bus", None) != bus:
+            continue
+        ports = tuple(getattr(device, "port_numbers", ()) or ())
+        if ports and ports[0] == port:
+            return device
+    return None
+
+
+def wait_for(identity: tuple[int, int], bus: int, port: int, timeout: float = 30.0):
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        device = find_device(identity, bus, port)
+        if device is not None:
+            return device
+        time.sleep(0.25)
+    return None
+
+
+def socket_is_live(path: Path) -> bool:
+    if not path.exists():
+        return False
+    probe = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    probe.settimeout(0.25)
+    try:
+        probe.connect(str(path))
+        return True
+    except OSError:
+        return False
+    finally:
+        probe.close()
+
+
+def run_checked(command: list[str]) -> None:
+    print("+", " ".join(command), file=sys.stderr, flush=True)
+    subprocess.run(command, check=True)
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--socket", type=Path,
+                        default=Path(os.environ.get("HDUC_SOCKET", "/tmp/hduc.sock")))
+    parser.add_argument("--bus", type=int, default=int(os.environ.get("HDUC_BUS", "2")))
+    parser.add_argument("--port", type=int, default=int(os.environ.get("HDUC_PORT", "5")))
+    parser.add_argument("--channel", type=int, default=21,
+                        help="physical channel used during full initialization")
+    parser.add_argument("--firmware", type=Path, default=DEFAULT_FIRMWARE)
+    parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
+    parser.add_argument("--reuse-runtime", action="store_true",
+                        help="skip the 225-second manifest when an initialized runtime already exists")
+    parser.add_argument("--dry-run", action="store_true")
+    args = parser.parse_args()
+
+    if not 13 <= args.channel <= 62:
+        parser.error("--channel must be a terrestrial physical channel in 13..62")
+    if args.dry_run:
+        print(
+            f"dry-run: bus={args.bus} port={args.port} channel={args.channel} "
+            f"socket={args.socket} reuse_runtime={args.reuse_runtime} "
+            f"firmware={args.firmware}"
+        )
+        return 0
+    for required in (CTL, args.firmware, args.manifest):
+        if not required.is_file():
+            parser.error(f"required file is missing: {required}")
+    if socket_is_live(args.socket):
+        print(f"hducd is already listening on {args.socket}", file=sys.stderr)
+        return 2
+
+    loader = find_device(LOADER, args.bus, args.port)
+    runtime = find_device(RUNTIME, args.bus, args.port)
+    needs_full_init = not args.reuse_runtime
+
+    if loader is not None:
+        print(
+            "HDUC is in loader mode; uploading the locally generated 16 KiB firmware. "
+            "No USB reset is used.",
+            file=sys.stderr,
+            flush=True,
+        )
+        try:
+            run_checked([
+                str(CTL), "loader-upload", str(args.firmware),
+                "--bus", str(args.bus), "--port", str(args.port),
+            ])
+        except subprocess.CalledProcessError as exc:
+            print(f"HDUC firmware upload failed (exit={exc.returncode})", file=sys.stderr)
+            return 2
+        runtime = wait_for(RUNTIME, args.bus, args.port)
+        if runtime is None:
+            print("HDUC runtime 3275:7080 did not appear", file=sys.stderr)
+            return 2
+        needs_full_init = True
+    elif runtime is None:
+        print(
+            f"no HDUC found at USB bus {args.bus} port {args.port} "
+            "(expected 1738:5211 or 3275:7080)",
+            file=sys.stderr,
+        )
+        return 2
+
+    if needs_full_init:
+        print(
+            "Replaying the normalized, known-good x64 initialization manifest; "
+            "this takes about 225 seconds.",
+            file=sys.stderr,
+            flush=True,
+        )
+        try:
+            run_checked([
+                sys.executable, str(ROOT / "scripts" / "replay_hduc_manifest.py"),
+                "--manifest", str(args.manifest),
+                "--terrestrial-channel", str(args.channel),
+                "--bus", str(args.bus), "--port", str(args.port),
+            ])
+        except subprocess.CalledProcessError as exc:
+            print(f"HDUC initialization failed (exit={exc.returncode})", file=sys.stderr)
+            return 2
+    else:
+        print("Reusing the existing initialized HDUC runtime.", file=sys.stderr)
+
+    command = [
+        str(CTL), "hduc-server", "--socket", str(args.socket),
+        "--channel", str(args.channel),
+        "--bus", str(args.bus), "--port", str(args.port),
+    ]
+    print("+", " ".join(command), file=sys.stderr, flush=True)
+    os.execv(command[0], command)
+    return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
