@@ -18,9 +18,10 @@ from u3_channels import parse_u3_channel
 from u3_streaming import (
     StreamStats, decryptor, detect_graph_row, packet_stream, transform_packet,
 )
+from recpt1_pipeline import OutputPipeline, parse_service_ids
 
 
-VERSION = "recpt1-u3 0.3"
+VERSION = "recpt1-u3 0.4"
 
 
 def parse_record_time(value: str) -> int:
@@ -80,6 +81,7 @@ def main() -> int:
     )
     parser.add_argument("--device", type=Path, dest="device_socket")
     parser.add_argument("--b25", action="store_true")
+    parser.add_argument("--b25-bin", help="external b25-compatible executable")
     parser.add_argument("--strip", action="store_true")
     parser.add_argument("--sid")
     parser.add_argument("--version", action="store_true")
@@ -102,17 +104,17 @@ def main() -> int:
         seconds = parse_record_time(args.rectime)
     except ValueError as error:
         parser.error(str(error))
-    if args.b25 or args.strip or args.sid:
-        parser.error(
-            "--b25/--strip/--sid are not implemented; place an external B25 "
-            "stage after the standard TS output"
-        )
+    try:
+        service_ids = parse_service_ids(args.sid)
+    except ValueError as error:
+        parser.error(str(error))
     socket_path = args.device_socket or args.socket
     if args.dry_run:
         print(
             f"socket={socket_path} channel={channel.canonical} "
             f"seconds={'indefinite' if seconds == 0 else seconds} "
-            f"output={args.destfile}"
+            f"output={args.destfile} b25={args.b25} strip={args.strip} "
+            f"sid={','.join(map(str, service_ids)) or 'all'}"
         )
         return 0
 
@@ -147,39 +149,43 @@ def main() -> int:
             file=sys.stderr, flush=True,
         )
         with source, target_context as target:
-            for packet in packet_stream(source, stats):
-                if cipher is None:
-                    pending.append(packet)
-                    selection = detect_graph_row((packet,))
-                    if selection is None:
-                        if len(pending) > 65_536:
-                            raise RuntimeError(
-                                "no CRC-valid PAT found while detecting graph row"
-                            )
-                        continue
-                    selected_row, _key, selected_mask, programs = selection
-                    cipher = decryptor(selected_row)
-                    print(
-                        f"detected U3 graph row {selected_row}; PAT programs="
-                        + ",".join(map(str, sorted(programs))),
-                        file=sys.stderr,
-                        flush=True,
-                    )
-                    queued, pending = pending, []
-                    for queued_packet in queued:
-                        standard = transform_packet(
-                            queued_packet, cipher, selected_mask
+            with OutputPipeline(
+                target, service_ids=service_ids, strip=args.strip,
+                b25=args.b25, b25_binary=args.b25_bin,
+            ) as output:
+                for packet in packet_stream(source, stats):
+                    if cipher is None:
+                        pending.append(packet)
+                        selection = detect_graph_row((packet,))
+                        if selection is None:
+                            if len(pending) > 65_536:
+                                raise RuntimeError(
+                                    "no CRC-valid PAT found while detecting graph row"
+                                )
+                            continue
+                        selected_row, _key, selected_mask, programs = selection
+                        cipher = decryptor(selected_row)
+                        print(
+                            f"detected U3 graph row {selected_row}; PAT programs="
+                            + ",".join(map(str, sorted(programs))),
+                            file=sys.stderr,
+                            flush=True,
                         )
-                        target.write(standard)
-                        digest.update(standard)
-                    continue
-                standard = transform_packet(packet, cipher, selected_mask)
-                target.write(standard)
-                digest.update(standard)
-            if cipher is None:
-                raise RuntimeError("stream ended before a CRC-valid PAT selected a graph row")
-            target.flush()
-            cipher.finalize()
+                        queued, pending = pending, []
+                        for queued_packet in queued:
+                            standard = transform_packet(
+                                queued_packet, cipher, selected_mask
+                            )
+                            output.write(standard)
+                            digest.update(standard)
+                        continue
+                    standard = transform_packet(packet, cipher, selected_mask)
+                    output.write(standard)
+                    digest.update(standard)
+                if cipher is None:
+                    raise RuntimeError("stream ended before a CRC-valid PAT selected a graph row")
+                cipher.finalize()
+            output_packets = output.output_packets
     except KeyboardInterrupt:
         print("recording interrupted", file=sys.stderr)
         return 130
@@ -195,7 +201,7 @@ def main() -> int:
         f"recording complete: packets={stats.packets} bytes={stats.packets * 188} "
         f"resync_gaps={len(stats.gaps)} "
         f"skipped={sum(length for _, length in stats.gaps)} "
-        f"trailing={stats.trailing} sha256={digest.hexdigest()}",
+        f"trailing={stats.trailing} output_packets={output_packets} sha256={digest.hexdigest()}",
         file=sys.stderr,
     )
     return 0 if stats.packets else 2

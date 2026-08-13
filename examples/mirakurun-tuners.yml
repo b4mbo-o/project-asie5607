@@ -1,0 +1,20 @@
+# Merge the entries you use into Mirakurun's tuners.yml.
+# Mirakurun replaces <channel> with the channel entry's `channel` value.
+- name: ASIE5607-U3
+  types:
+    - GR
+    - BS
+    - CS
+  command: /usr/local/bin/recpt1-u3 --device /run/asie5607/u3.sock <channel> - -
+  isDisabled: false
+
+- name: ASIE5607-HDUC
+  types:
+    - GR
+  command: /usr/local/bin/recpt1-hduc --device /run/asie5607/hduc.sock <channel> - -
+  isDisabled: true
+
+# Either configure Mirakurun's `decoder`, or add these options before
+# <channel> to use a separately installed recfriio-compatible executable:
+#   --b25 --b25-bin /usr/local/bin/b25
+# Do not enable both decoding paths.

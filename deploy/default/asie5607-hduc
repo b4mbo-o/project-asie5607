@@ -1,0 +1,2 @@
+# The first-level physical USB port remains stable when the device number changes.
+HDUCD_OPTIONS="--bus 2 --port 5 --channel 21 --socket /run/asie5607/hduc.sock"

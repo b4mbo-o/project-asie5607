@@ -1,0 +1,2 @@
+# HDUC and U3 share loader ID 1738:5211; set the U3's physical bus/port explicitly.
+U3D_OPTIONS="--bus 2 --port 2 --channel 21 --socket /run/asie5607/u3.sock"

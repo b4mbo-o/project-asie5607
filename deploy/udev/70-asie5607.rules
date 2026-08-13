@@ -1,0 +1,5 @@
+# project-asie5607: permit the video group to access loader and runtime modes.
+# 1738:5211 is shared by HDUC/U3, so no service is started from this rule.
+SUBSYSTEM=="usb", ATTR{idVendor}=="1738", ATTR{idProduct}=="5211", GROUP="video", MODE="0660"
+SUBSYSTEM=="usb", ATTR{idVendor}=="3275", ATTR{idProduct}=="7080", GROUP="video", MODE="0660"
+SUBSYSTEM=="usb", ATTR{idVendor}=="3275", ATTR{idProduct}=="9010", GROUP="video", MODE="0660"

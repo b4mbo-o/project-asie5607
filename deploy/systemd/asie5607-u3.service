@@ -1,0 +1,21 @@
+[Unit]
+Description=ASIE5607 MonsterTV U3 persistent tuner backend
+After=systemd-udevd.service pcscd.service
+Wants=pcscd.service
+
+[Service]
+Type=simple
+User=asie5607
+Group=video
+EnvironmentFile=-/etc/default/asie5607-u3
+RuntimeDirectory=asie5607
+RuntimeDirectoryMode=0770
+ExecStart=/usr/local/bin/u3d $U3D_OPTIONS
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

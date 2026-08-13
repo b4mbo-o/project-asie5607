@@ -24,9 +24,10 @@ from transform_hduc_x64_stream import (  # noqa: E402
     packet_stream,
     transform_packet,
 )
+from recpt1_pipeline import OutputPipeline, parse_service_ids  # noqa: E402
 
 
-VERSION = "recpt1-hduc 0.1"
+VERSION = "recpt1-hduc 0.2"
 
 
 def parse_record_time(value: str) -> int:
@@ -87,6 +88,7 @@ def main() -> int:
                         help="recpt1-compatible alias for --socket")
     parser.add_argument("--material", type=Path, default=DEFAULT_MATERIAL)
     parser.add_argument("--b25", action="store_true")
+    parser.add_argument("--b25-bin", help="external b25-compatible executable")
     parser.add_argument("--strip", action="store_true")
     parser.add_argument("--sid")
     parser.add_argument("--version", action="store_true")
@@ -113,16 +115,16 @@ def main() -> int:
     except ValueError as exc:
         parser.error(str(exc))
 
-    if args.b25 or args.strip or args.sid:
-        parser.error(
-            "--b25/--strip/--sid are not in the first backend milestone; "
-            "record standard TS first or place a separately installed B25 stage after this command"
-        )
+    try:
+        service_ids = parse_service_ids(args.sid)
+    except ValueError as exc:
+        parser.error(str(exc))
     socket_path = args.device_socket or args.socket
     if args.dry_run:
         print(
             f"socket={socket_path} channel={channel} "
-            f"seconds={'indefinite' if seconds == 0 else seconds} output={args.destfile}"
+            f"seconds={'indefinite' if seconds == 0 else seconds} output={args.destfile} "
+            f"b25={args.b25} strip={args.strip} sid={','.join(map(str, service_ids)) or 'all'}"
         )
         return 0
 
@@ -160,12 +162,16 @@ def main() -> int:
             flush=True,
         )
         with source, target_context as target:
-            for packet in packet_stream(source, stats):
-                transformed = transform_packet(packet, decryptor, mask)
-                target.write(transformed)
-                digest.update(transformed)
-            target.flush()
-            decryptor.finalize()
+            with OutputPipeline(
+                target, service_ids=service_ids, strip=args.strip,
+                b25=args.b25, b25_binary=args.b25_bin,
+            ) as output:
+                for packet in packet_stream(source, stats):
+                    transformed = transform_packet(packet, decryptor, mask)
+                    output.write(transformed)
+                    digest.update(transformed)
+                decryptor.finalize()
+            output_packets = output.output_packets
     except KeyboardInterrupt:
         print("recording interrupted", file=sys.stderr)
         return 130
@@ -180,7 +186,7 @@ def main() -> int:
     print(
         f"recording complete: packets={stats.packets} bytes={stats.packets * 188} "
         f"resync_gaps={len(stats.gaps)} skipped={sum(length for _, length in stats.gaps)} "
-        f"trailing={stats.trailing} sha256={digest.hexdigest()}",
+        f"trailing={stats.trailing} output_packets={output_packets} sha256={digest.hexdigest()}",
         file=sys.stderr,
     )
     return 0 if stats.packets else 2

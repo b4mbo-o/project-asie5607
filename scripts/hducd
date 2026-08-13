@@ -15,6 +15,8 @@ from pathlib import Path
 
 import usb.core
 
+from daemon_supervisor import supervise, worker_process
+
 
 ROOT = Path(__file__).resolve().parents[1]
 CTL = ROOT / "tools" / "hduc_ctl" / "hduc_ctl"
@@ -77,6 +79,12 @@ def main() -> int:
     parser.add_argument("--manifest", type=Path, default=DEFAULT_MANIFEST)
     parser.add_argument("--reuse-runtime", action="store_true",
                         help="skip the 225-second manifest when an initialized runtime already exists")
+    parser.add_argument("--no-recover", action="store_true",
+                        help="exit instead of supervising a stopped worker")
+    parser.add_argument("--retry-seconds", type=float, default=2.0,
+                        help="delay between supervised recovery attempts")
+    parser.add_argument("--max-restarts", type=int, default=0,
+                        help="recovery limit; zero means unlimited")
     parser.add_argument("--dry-run", action="store_true")
     args = parser.parse_args()
 
@@ -92,6 +100,7 @@ def main() -> int:
     for required in (CTL, args.firmware, args.manifest):
         if not required.is_file():
             parser.error(f"required file is missing: {required}")
+    args.socket.parent.mkdir(parents=True, exist_ok=True)
     if socket_is_live(args.socket):
         print(f"hducd is already listening on {args.socket}", file=sys.stderr)
         return 2
@@ -159,4 +168,6 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(
+        main() if worker_process() else supervise(Path(__file__).resolve(), "hducd")
+    )

@@ -164,6 +164,14 @@ scripts/recpt1-u3 21 30 /tmp/u3-ch21.ts
 scripts/recpt1-u3 22 30 /tmp/u3-ch22.ts
 ```
 
+service選択、null packet除去、利用者が別途導入した外部B25も利用できます。
+
+```bash
+scripts/recpt1-u3 --sid 141 --strip BS13_0 30 /tmp/bs141.ts
+scripts/recpt1-u3 --b25 --b25-bin /usr/local/bin/b25 \
+  --sid 141 --strip BS13_0 30 /tmp/bs141-clear.ts
+```
+
 別channel要求時もprimary USB handleとEP81 URBを閉じず、tune/re-armを実行します。
 地上ch21↔ch22でPAT/全PMT、CC不連続0、外部B25後scrambled 0を確認済みです。
 
@@ -183,8 +191,8 @@ scripts/recpt1-u3 QVC  30 /tmp/u3-qvc.ts
 scripts/recpt1-u3 21 30 /tmp/u3-ch21.ts
 ```
 
-全24 transponderのcontrolを生成できますが、live確認済みはBS13とCS22です。現状は
-multiplex全体を保存し、`--sid`によるservice抽出は行いません。
+全24 transponderのcontrolを生成できますが、live確認済みはBS13とCS22です。既定では
+multiplex全体を保存し、必要なら`--sid`でserviceを選択できます。
 
 ### one-shot診断
 
@@ -210,11 +218,21 @@ scripts/run_hduc_x64_live_once.sh --channel 21 --output /tmp/ch21.ts
 U3 one-shotでは`U3_B25_BIN`/`U3_B25_OUT`を使用します。録画・復号・視聴は放送契約、
 カード利用条件、所在地の法令に従ってください。
 
+## 常設運用と自動復旧
+
+`hducd`/`u3d`はUSB切断やBulk/heartbeat停止でworkerが終了した場合、同じ物理USB portで
+loader/runtimeを待ち、firmware投入と初期化から自動復旧します。USB resetは使用しません。
+`--no-recover`、`--retry-seconds`、`--max-restarts`で動作を変更できます。
+
+`make install`、検証付き`make install-firmware`、udev rule、systemd unit、Mirakurun 4系の
+設定例を同梱しています。詳しい導入方法は[常設運用ガイド](docs/operations.md)を参照してください。
+
 ## 現在の制限
 
 - DVB device nodeではなくUnix socketを使うuser-space backend
 - 各daemonはチューナー1台、同時録画client 1本
-- `--sid`、内蔵`--b25`/`--strip`、HTTP/UDP、EPG、録画予約は未実装
+- HTTP/UDP、EPG、録画予約は未実装（Mirakurunとの連携例を同梱）
+- `--b25`はB25実装を内蔵せず、利用者が別途導入したrecfriio互換CLIを呼び出す
 - U3衛星のlive確認はBS13/CS22のみ
 - HDUC cold initは約225秒。常駐backendでは一度だけ実行
 - 長時間HDUC EP81で稀なsideband recordを観測しており、後続は再同期して復帰

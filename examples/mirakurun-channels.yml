@@ -1,0 +1,12 @@
+# Examples only. Replace terrestrial entries with physical channels used locally.
+- name: GR-example-ch21
+  type: GR
+  channel: "21"
+
+- name: BS13
+  type: BS
+  channel: BS13_0
+
+- name: CS22
+  type: CS
+  channel: CS22

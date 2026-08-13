@@ -22,6 +22,8 @@ bash -n "$ROOT/scripts/run_hduc_x64_live_once.sh"
 "$ROOT/scripts/hducd" --dry-run | grep -q 'socket=/tmp/hduc.sock'
 "$ROOT/scripts/recpt1-hduc" --dry-run 21 1:02:03 /tmp/test.ts | \
   grep -q 'seconds=3723'
+"$ROOT/scripts/recpt1-hduc" --b25 --b25-bin /opt/local/b25 \
+  --sid 1056 --strip --dry-run 21 30 /tmp/test.ts | grep -q 'sid=1056'
 python3 "$ROOT/scripts/replay_hduc_manifest.py" \
   --manifest "$ROOT/data/hduc-x64-init.json" \
   --terrestrial-channel 21 --dry-run | grep -q 'commands=3085'
@@ -40,4 +42,6 @@ bash -n "$ROOT/scripts/run_u3_terrestrial_once.sh"
 "$ROOT/scripts/recpt1-u3" --dry-run 21 1:02:03 /tmp/u3-test.ts | grep -q 'seconds=3723'
 "$ROOT/scripts/recpt1-u3" --dry-run BS141 30 /tmp/u3-bs.ts | grep -q 'channel=BS13_0'
 "$ROOT/scripts/recpt1-u3" --dry-run QVC 30 /tmp/u3-cs.ts | grep -q 'channel=CS22'
+"$ROOT/scripts/recpt1-u3" --sid 141 --strip --dry-run BS141 30 /tmp/u3-bs.ts | \
+  grep -q 'sid=141'
 echo "smoke tests passed"

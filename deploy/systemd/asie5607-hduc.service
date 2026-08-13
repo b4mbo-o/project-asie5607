@@ -1,0 +1,20 @@
+[Unit]
+Description=ASIE5607 MonsterTV HDUC persistent tuner backend
+After=systemd-udevd.service
+
+[Service]
+Type=simple
+User=asie5607
+Group=video
+EnvironmentFile=-/etc/default/asie5607-hduc
+RuntimeDirectory=asie5607
+RuntimeDirectoryMode=0770
+ExecStart=/usr/local/bin/hducd $HDUCD_OPTIONS
+Restart=on-failure
+RestartSec=3
+TimeoutStopSec=20
+NoNewPrivileges=true
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
