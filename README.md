@@ -221,9 +221,18 @@ U3 one-shotでは`U3_B25_BIN`/`U3_B25_OUT`を使用します。録画・復号�
 - `1738:5211`はHDUC/U3共通です。複数台接続時はbus/port指定が必須です。
 - このprojectはSKNET、ASICEN、ARIB、放送事業者とは無関係です。
 
-詳細は[NOTICE.md](NOTICE.md)を参照してください。
+project固有の帰属表示は[NOTICE](NOTICE)、第三者fileとの境界は
+[NOTICE.md](NOTICE.md)を参照してください。開発への参加方法は
+[CONTRIBUTING.md](CONTRIBUTING.md)にあります。
 
 ## License
 
-licenseはまだ選定していません。現時点では既定の著作権が適用され、閲覧・GitHub上の
-forkを越える再利用許諾を明示していません。license方針は別途決定します。
+Copyright 2026 bamboo（GitHub: [b4mbo-o](https://github.com/b4mbo-o)）
+
+このprojectの、copyright holderが許諾する権利を持つsource・document・dataは
+[Apache License, Version 2.0](LICENSE)で提供します。商用を含む利用、改変、再配布、
+sublicenseが可能です。再配布時はApache-2.0の条件に従い、licenseとcopyright・NOTICEを
+保持し、変更したfileには変更の旨を明示してください。
+
+SKNETその他のvendor driver、そこから利用者が生成するfirmware、放送内容、B-CAS data、
+第三者softwareにはこのlicenseを付与しません。これらは公開repositoryに含まれていません。

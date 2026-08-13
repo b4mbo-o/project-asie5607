@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 bamboo
 """Stream raw HDUC EP81 into standard TS using the verified x64 mode-6 path.
 
 Unlike the offline analysis harness, this tool does not load the recording or

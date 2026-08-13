@@ -32,6 +32,7 @@ Product and company names identify compatible hardware only. No affiliation
 or warranty is implied. Users are responsible for complying with applicable
 law, software terms, broadcast contracts, and card terms.
 
-No open-source license has been selected yet. Unless and until a license is
-added, source reuse remains subject to the copyright holder's permission and
-applicable law.
+Project material for which the copyright holder is entitled to grant a
+license is available under the Apache License, Version 2.0. See `LICENSE` and
+`NOTICE`. That license does not grant rights in vendor files, locally
+generated firmware, broadcast content, card data, or third-party software.

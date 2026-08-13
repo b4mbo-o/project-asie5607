@@ -1,5 +1,7 @@
 /*
  * hduc_ctl - experimental USB control tool for the SKNET HDUC (ASIE5607)
+ * SPDX-License-Identifier: Apache-2.0
+ * Copyright 2026 bamboo
  *
  * Implements, in Linux/libusb form, the AS11Loader-compatible firmware
  * upload container protocol reverse engineered from the official

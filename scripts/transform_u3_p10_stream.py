@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 bamboo
 """Convert aligned U3 EP0x81 records to standard MPEG-TS.
 
 This is the host-side Property-10 transform used by the 2009 U3 EagleDTV

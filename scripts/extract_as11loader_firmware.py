@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 bamboo
 """Create the ASIE5607 runtime image from an owner-supplied loader driver.
 
 The vendor driver is not distributed by this project. This extractor accepts

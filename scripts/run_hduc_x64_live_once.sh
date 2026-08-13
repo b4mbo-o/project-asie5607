@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 bamboo
 # One-shot HDUC x64-mode6 pipeline using bundled normalized protocol data.
 # No USB reset is used.  The receive URBs are queued before request 0x06.
 set -euo pipefail

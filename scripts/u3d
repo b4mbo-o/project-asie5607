@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 bamboo
 """Initialize one U3 and keep its raw EP81 stream behind a Unix socket."""
 
 from __future__ import annotations

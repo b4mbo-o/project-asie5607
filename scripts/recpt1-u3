@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 bamboo
 """recpt1-style client for the experimental persistent U3 backend."""
 
 from __future__ import annotations

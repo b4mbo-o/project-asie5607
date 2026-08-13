@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 bamboo
 # Exact-good2 U3 ch21 capture -> aligned standard MPEG-TS.
 # The original USB handle remains alive after conversion; no USB reset is used.
 set -euo pipefail
