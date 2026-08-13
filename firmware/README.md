@@ -3,8 +3,12 @@
 This directory intentionally contains no vendor firmware.
 
 Obtain the supported **32-bit** `SKNET_AS11Loader.sys` from software supplied
-for hardware that you own, then generate the local runtime image from the
-repository root:
+for hardware that you own. The primary package identifier is the HDUC driver
+released on **2009-11-10**, `091110_Driver.zip`, Driver Ver.1.9.10.20. The U3
+package released on 2009-11-27, `091127_Driver_U3.zip`, contains the same
+loader file. Its internal PE timestamp is 2009-09-24 03:24:08 UTC.
+
+Then generate the local runtime image from the repository root:
 
 ```bash
 python3 scripts/extract_as11loader_firmware.py \

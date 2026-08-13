@@ -21,15 +21,20 @@ BS13は外付けB-CAS後段でscrambled packet 0、CS22ではclearのQVC映像�
 利用者が所有する対応機器用の**32-bit版** `SKNET_AS11Loader.sys` を自分で用意し、
 ローカルでruntime imageを生成してください。64-bit版loader driverは入力にできません。
 
+対応する版は、**2009年11月10日公開**のHDUC用driver package
+`091110_Driver.zip`（Driver Ver.1.9.10.20）に含まれる32-bit版です。
+2009年11月27日公開のU3用`091127_Driver_U3.zip`にも、これと同一SHA-256の
+`SKNET_AS11Loader.sys`が含まれます。file内部のPE timestampは
+2009年9月24日 03:24:08 UTCです。
+
 対応入力のSHA-256：
 
 ```text
 9abd9c8cd901d36235d96e8361ab51d7b8538bdc39a38a03d4c2d7c1b6ecfbe0
 ```
 
-このdriver buildは、対応するHDUC/U3向けソフトウェアに含まれる32-bit loader driverです。
 本projectはdriverをダウンロードしません。所有機器に付属した媒体、正規に入手した
-installer、または自分のWindows環境から取得してください。
+上記日付のinstaller、または自分のWindows環境から取得してください。
 
 依存package導入後、repository rootで次を実行します。
 

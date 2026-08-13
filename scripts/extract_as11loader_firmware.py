@@ -4,9 +4,10 @@
 """Create the ASIE5607 runtime image from an owner-supplied loader driver.
 
 The vendor driver is not distributed by this project. This extractor accepts
-only the known 32-bit ``SKNET_AS11Loader.sys`` build shared by the supported
-HDUC and U3 packages, derives the AES key from that supplied file, decrypts its
-embedded RAM image, and verifies the exact known output hash.
+only the known 32-bit ``SKNET_AS11Loader.sys`` build from the 2009-11-10 HDUC
+driver package (also present unchanged in the 2009-11-27 U3 package), derives
+the AES key from that supplied file, decrypts its embedded RAM image, and
+verifies the exact known output hash.
 """
 
 from __future__ import annotations
@@ -23,6 +24,10 @@ SUPPORTED_DRIVER_SHA256 = (
 )
 EXPECTED_FIRMWARE_SHA256 = (
     "f4848c8c091634897f9829e50d2ff8e5dc28792c6b20cf095d38d40379518c7a"
+)
+SUPPORTED_PACKAGE = (
+    "2009-11-10 091110_Driver.zip, Driver Ver.1.9.10.20, 32-bit "
+    "SKNET_AS11Loader.sys"
 )
 
 # File offsets in the supported PE32 driver. Restricting the input hash above
@@ -99,8 +104,9 @@ def main() -> int:
             "unsupported SKNET_AS11Loader.sys build\n"
             f"  supplied SHA-256: {driver_hash}\n"
             f"  supported SHA-256: {SUPPORTED_DRIVER_SHA256}\n"
-            "Use the 32-bit loader driver described in README.md; the 64-bit "
-            "file is not interchangeable."
+            f"  supported package: {SUPPORTED_PACKAGE}\n"
+            "The same loader is in the 2009-11-27 U3 package. The 64-bit "
+            "file is not interchangeable; see README.md."
         )
 
     try:
