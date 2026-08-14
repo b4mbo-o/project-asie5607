@@ -84,3 +84,9 @@ streamがscrambled packet 0でした。
 Mirakurunは視聴終了から数秒後にtuner commandへ`SIGTERM`を送ります。`recpt1-hduc`と
 `recpt1-u3`はこれを通常の録画中断として処理し、B25 processとdaemon socketを閉じます。
 daemon本体とprimary USB handleは終了しないため、次の選局要求にそのまま応答します。
+
+単一のU3でMirakurunの全物理chスキャン（GR 13〜62）を行う場合は、録画・EPG収集中では
+ないアイドル時に実行してください。スキャンは短時間の再選局を多数発生させるため、通常運用
+では既知の受信chを`channels.yml`へ登録し、EPGは登録済みserviceから取得する方が安定します。
+GRのservice/PAT検出にはB-CAS復号は不要です。tuner commandへ外部B25を接続する場合も、
+カード未接続時に全スキャンを行うとB25 processの再起動が連続するため避けてください。
