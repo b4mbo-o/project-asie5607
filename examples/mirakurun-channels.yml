@@ -1,4 +1,13 @@
 # Examples only. Replace terrestrial entries with physical channels used locally.
+#
+# Do not put every possible BS/CS transponder into one-U3 installation blindly.
+# First stop Mirakurun, then probe the locally receivable physical channels:
+#
+#   asie5607-probe-u3-satellite > /tmp/u3-satellite-channels.yml
+#
+# Merge only the generated entries below and restart Mirakurun.  The probe
+# writes progress to stderr, emits YAML to stdout, and deliberately does not
+# use B25 because a CRC-valid PAT is sufficient for this discovery step.
 - name: GR-example-ch21
   type: GR
   channel: "21"

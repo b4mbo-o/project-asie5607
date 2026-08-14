@@ -38,6 +38,7 @@ install: all
 	ln -sfn "$(LIBDIR)/scripts/recpt1-hduc" "$(DESTDIR)$(BINDIR)/recpt1-hduc"
 	ln -sfn "$(LIBDIR)/scripts/recpt1-u3" "$(DESTDIR)$(BINDIR)/recpt1-u3"
 	ln -sfn "$(LIBDIR)/scripts/extract_as11loader_firmware.py" "$(DESTDIR)$(BINDIR)/asie5607-extract-firmware"
+	ln -sfn "$(LIBDIR)/scripts/probe_u3_satellite.py" "$(DESTDIR)$(BINDIR)/asie5607-probe-u3-satellite"
 	install -m 0644 deploy/systemd/asie5607-hduc.service "$(DESTDIR)$(SYSTEMD_UNIT_DIR)/"
 	install -m 0644 deploy/systemd/asie5607-u3.service "$(DESTDIR)$(SYSTEMD_UNIT_DIR)/"
 	install -m 0644 deploy/udev/70-asie5607.rules "$(DESTDIR)$(UDEV_RULES_DIR)/"
@@ -58,7 +59,7 @@ install-firmware:
 uninstall:
 	rm -f "$(DESTDIR)$(BINDIR)/hducd" "$(DESTDIR)$(BINDIR)/u3d"
 	rm -f "$(DESTDIR)$(BINDIR)/recpt1-hduc" "$(DESTDIR)$(BINDIR)/recpt1-u3"
-	rm -f "$(DESTDIR)$(BINDIR)/asie5607-extract-firmware"
+	rm -f "$(DESTDIR)$(BINDIR)/asie5607-extract-firmware" "$(DESTDIR)$(BINDIR)/asie5607-probe-u3-satellite"
 	rm -f "$(DESTDIR)$(SYSTEMD_UNIT_DIR)/asie5607-hduc.service"
 	rm -f "$(DESTDIR)$(SYSTEMD_UNIT_DIR)/asie5607-u3.service"
 	rm -f "$(DESTDIR)$(UDEV_RULES_DIR)/70-asie5607.rules"

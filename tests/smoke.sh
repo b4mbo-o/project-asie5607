@@ -5,6 +5,7 @@ ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 CTL="$ROOT/tools/hduc_ctl/hduc_ctl"
 
 "$ROOT/scripts/extract_as11loader_firmware.py" --help >/dev/null
+python3 "$ROOT/scripts/probe_u3_satellite.py" --help >/dev/null
 
 out13="$($CTL tune --channel 13 --dry-run)"
 out62="$($CTL tune --channel 62 --dry-run)"

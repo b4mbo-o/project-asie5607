@@ -9,11 +9,13 @@ EP81受信、独自raw形式から標準MPEG-TSへの変換を行います。
 | 機種 | 地上波 | BS/110度CS | 常駐録画 |
 |---|---|---|---|
 | MonsterTV HDUC (`3275:7080`) | 物理ch13〜62、ch21/ch22等でlive確認 | 非対応 | `hducd` + `recpt1-hduc` |
-| MonsterTV U3 (`3275:9010`) | 物理ch13〜62、ch21↔ch22をlive確認 | 全24 transponderを実装、BS13/CS22をlive確認 | `u3d` + `recpt1-u3` |
+| MonsterTV U3 (`3275:9010`) | 物理ch13〜62、ch21↔ch22をlive確認 | 全24 transponderを実装。実受信probe・Mirakurun service/EPG連携を確認 | `u3d` + `recpt1-u3` |
 
 U3では、同じUSB handleと8本のEP81 URBを維持したまま
 地上ch21→BS13→CS22→地上ch21を往復し、標準TSまで変換できることを確認済みです。
 BS13は外付けB-CAS後段でscrambled packet 0、CS22ではclearのQVC映像・音声を確認しました。
+衛星の実受信channelは設置環境ごとに異なるため、同梱のphysical-channel probeで検出してから
+Mirakurunへ登録します。手順は[常設運用ガイド](docs/operations.md#u3のbscs-physical-channelを登録する)を参照してください。
 
 ## 重要：firmwareは同梱していません
 
@@ -63,6 +65,7 @@ SHA-256: f4848c8c091634897f9829e50d2ff8e5dc28792c6b20cf095d38d40379518c7a
 - `tools/hduc_ctl/` — libusb制御、選局、非同期Bulk受信、keepalive
 - `scripts/hducd`, `scripts/recpt1-hduc` — HDUC常駐backend/client
 - `scripts/u3d`, `scripts/recpt1-u3` — U3地上波・BS/CS常駐backend/client
+- `scripts/probe_u3_satellite.py` — 受信できるU3 BS/CS transponderを検出し、Mirakurun YAMLを生成
 - offline検証、TS/PSI/CA検査、one-shot診断scriptとunit test
 
 以下は同梱しません。
@@ -191,8 +194,17 @@ scripts/recpt1-u3 QVC  30 /tmp/u3-qvc.ts
 scripts/recpt1-u3 21 30 /tmp/u3-ch21.ts
 ```
 
-全24 transponderのcontrolを生成できますが、live確認済みはBS13とCS22です。既定では
-multiplex全体を保存し、必要なら`--sid`でserviceを選択できます。
+全24 transponderのcontrolを生成できます。実受信できる衛星physical channelはアンテナ環境に
+依存するため、Mirakurunへ登録する前にprobeしてください。既定ではmultiplex全体を保存し、
+必要なら`--sid`でserviceを選択できます。
+
+```bash
+# Mirakurunを停止したアイドル時に実行し、検出結果だけを登録する
+python3 scripts/probe_u3_satellite.py > /tmp/u3-satellite-channels.yml
+```
+
+詳細な安全手順は[常設運用ガイド](docs/operations.md#u3のbscs-physical-channelを登録する)を
+参照してください。
 
 ### one-shot診断
 
@@ -233,7 +245,7 @@ loader/runtimeを待ち、firmware投入と初期化から自動復旧します�
 - 各daemonはチューナー1台、同時録画client 1本
 - HTTP/UDP、EPG、録画予約は本体に内蔵しない（Mirakurun 4.1.3との実機連携を確認し、設定例を同梱）
 - `--b25`はB25実装を内蔵せず、利用者が別途導入したrecfriio互換CLIを呼び出す
-- U3衛星のlive確認はBS13/CS22のみ
+- 衛星の受信可否・契約内の復号可否はアンテナ、地域、B-CAS契約に依存する
 - HDUC cold initは約225秒。常駐backendでは一度だけ実行
 - 長時間HDUC EP81で稀なsideband recordを観測しており、後続は再同期して復帰
 

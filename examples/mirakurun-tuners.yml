@@ -18,3 +18,6 @@
 # <channel> to use a separately installed recfriio-compatible executable:
 #   --b25 --b25-bin /usr/local/bin/b25
 # Do not enable both decoding paths.
+#
+# `asie5607-probe-u3-satellite` talks to u3d directly and is for an idle
+# single-U3 installation; stop Mirakurun before invoking it.

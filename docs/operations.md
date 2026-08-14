@@ -90,3 +90,37 @@ daemon本体とprimary USB handleは終了しないため、次の選局要求�
 では既知の受信chを`channels.yml`へ登録し、EPGは登録済みserviceから取得する方が安定します。
 GRのservice/PAT検出にはB-CAS復号は不要です。tuner commandへ外部B25を接続する場合も、
 カード未接続時に全スキャンを行うとB25 processの再起動が連続するため避けてください。
+
+### U3のBS/CS physical channelを登録する
+
+衛星は地域・アンテナ・配線で受信できるtransponderが異なるため、Mirakurunへ候補全部を
+登録して長い無信号timeoutを待たせるのではなく、同梱probeで先にPATを確認します。probeは
+直接`u3d`へ接続し、各BS奇数/CS偶数transponderを2秒ずつ受信して、CRC-valid PATを得たもの
+だけをYAMLとしてstdoutへ出します。B25を使わないので、契約状態や復号可否は検出条件に
+含みません。
+
+U3は一系統しかないため、**Mirakurunを停止し、録画・視聴・EPG取得が無いことを確認してから**
+実行してください。
+
+```bash
+sudo systemctl stop mirakurun
+asie5607-probe-u3-satellite \
+  --socket /run/asie5607/u3.sock \
+  > /tmp/u3-satellite-channels.yml
+
+# 内容を確認してから、利用中のchannels.ymlへmergeする
+cat /tmp/u3-satellite-channels.yml
+sudo systemctl start mirakurun
+```
+
+source treeから未installのまま使う場合は、次と同じです。
+
+```bash
+python3 scripts/probe_u3_satellite.py --socket /run/asie5607/u3.sock \
+  > /tmp/u3-satellite-channels.yml
+```
+
+進捗と受信判定はstderr、YAMLだけがstdoutです。Mirakurun再起動後、登録済みphysical channel
+からservice scanとEPG取得を行えます。試験環境では18 transponderからBS 23・CS 41を含む94
+serviceを登録し、BS network 4、CS networks 6/7のEPG取得まで確認しました。これはその受信
+環境での結果であり、他環境で同じchannel/serviceを保証するものではありません。
