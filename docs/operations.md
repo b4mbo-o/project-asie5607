@@ -74,3 +74,13 @@ recpt1-u3 --b25 --b25-bin /usr/local/bin/b25 --sid 141 --strip \
 Mirakurun 4系の`<channel>` command variable形式です。Mirakurun側decoderとclientの
 `--b25`を同時には有効にしないでください。daemon socketへMirakurun userが接続できるよう、
 同userを`video` groupへ追加します。
+
+Mirakurun 4.1.3 + Node.js 22で、U3 1台を`GR`/`BS`/`CS`兼用tunerとして実機確認済みです。
+初回service scanは地上ch21（フジテレビ）、BS13（BS日テレ）、CS22（QVC）を順に検出し、
+channel streamとservice streamの両APIから188-byte同期TSを取得できました。外部B25を
+tuner commandへ接続した試験では、フジテレビ1056、BS日テレ141、QVC 161の各service
+streamがscrambled packet 0でした。
+
+Mirakurunは視聴終了から数秒後にtuner commandへ`SIGTERM`を送ります。`recpt1-hduc`と
+`recpt1-u3`はこれを通常の録画中断として処理し、B25 processとdaemon socketを閉じます。
+daemon本体とprimary USB handleは終了しないため、次の選局要求にそのまま応答します。

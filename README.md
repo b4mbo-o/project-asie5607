@@ -231,7 +231,7 @@ loader/runtimeを待ち、firmware投入と初期化から自動復旧します�
 
 - DVB device nodeではなくUnix socketを使うuser-space backend
 - 各daemonはチューナー1台、同時録画client 1本
-- HTTP/UDP、EPG、録画予約は未実装（Mirakurunとの連携例を同梱）
+- HTTP/UDP、EPG、録画予約は本体に内蔵しない（Mirakurun 4.1.3との実機連携を確認し、設定例を同梱）
 - `--b25`はB25実装を内蔵せず、利用者が別途導入したrecfriio互換CLIを呼び出す
 - U3衛星のlive確認はBS13/CS22のみ
 - HDUC cold initは約225秒。常駐backendでは一度だけ実行

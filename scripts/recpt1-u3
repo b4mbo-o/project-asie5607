@@ -10,6 +10,7 @@ import contextlib
 import hashlib
 import os
 import re
+import signal
 import socket
 import sys
 from pathlib import Path
@@ -22,6 +23,11 @@ from recpt1_pipeline import OutputPipeline, parse_service_ids
 
 
 VERSION = "recpt1-u3 0.4"
+
+
+def terminate_recording(_signum: int, _frame) -> None:
+    """Let Mirakurun/systemd stop B25 and the tuner socket cleanly."""
+    raise KeyboardInterrupt
 
 
 def parse_record_time(value: str) -> int:
@@ -72,6 +78,7 @@ def receive_line(connection: socket.socket, limit: int = 256) -> str:
 
 
 def main() -> int:
+    signal.signal(signal.SIGTERM, terminate_recording)
     parser = argparse.ArgumentParser(
         description=__doc__, usage="%(prog)s [options] channel rectime destfile"
     )
