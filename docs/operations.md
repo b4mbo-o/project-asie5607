@@ -45,6 +45,20 @@ deviceがUSB busの一覧から完全に消えた場合、supervisorは再接続
 USB control転送だけで復活させることはできないため、物理再接続またはhost/hypervisor側での
 再接続が必要です。再接続後は人手でdaemonを再起動する必要はありません。
 
+### U3の短い初期化期限への対処
+
+一部のU3個体は、通常の初期化列を送るとsession 3直前で`LIBUSB_ERROR_PIPE`になることが
+あります。このときは全体を急がせる`--replay-scale`ではなく、session 3前だけを短縮する
+`--early-replay-scale`を指定します。card交換・ready確認・選局/re-armは通常の待機時間で実行
+されるため、受信開始後のタイミングを不必要に縮めません。
+
+```bash
+u3d --bus 2 --port 2 --channel 21 --early-replay-scale 0.2
+```
+
+値は`0 < scale <= 1`です。これは個体差への互換profileであり、通常個体では指定不要です。
+全ての待機を短縮する`--replay-scale`は診断目的以外には使わないでください。
+
 ```bash
 # 10秒間隔、最大5回だけ復旧を試す
 u3d --retry-seconds 10 --max-restarts 5 --bus 2 --port 2

@@ -20,6 +20,8 @@ from pathlib import Path
 from u3_control_template import DEFAULT_TEMPLATE, load_control_template
 from u3_f010_transform import f010_response
 from u3_replay import device_present, replay, sequence_for
+from u3_channels import parse_u3_channel
+from u3_satellite_tuning import satellite_tune_sequence
 from u3_terrestrial_tuning import patch_terrestrial_tune
 from u3_f010_live import current_challenge, device_filter, run_hduc
 from u3_good2_secure_material import (
@@ -66,7 +68,7 @@ def establish(args: argparse.Namespace, index: int, label: str) -> None:
     )
     replay(
         args.hduc, sequence, args.bus, args.port,
-        f"{label} retained exact-good2 RSA prefix",
+        f"{label} retained exact-good2 RSA prefix", args.early_replay_scale,
     )
     challenge = current_challenge(
         args.hduc, "0x3275", "0x9010", args.bus, args.port)
@@ -85,7 +87,22 @@ def main() -> int:
                         help="physical U3 port; required to avoid another ASICEN device")
     parser.add_argument("--channel", type=int, default=21,
                         choices=range(13, 63), metavar="13..62")
+    parser.add_argument(
+        "--satellite-channel",
+        help=("after the terrestrial bootstrap/re-arm, enter this BS/CS "
+              "physical channel before queueing EP81 (for example BS13_0 or CS22)"),
+    )
     parser.add_argument("--seconds", type=int, default=8)
+    parser.add_argument(
+        "--replay-scale", type=float, default=1.0,
+        help=("scale only the recorded inter-control waits; use a value below 1 "
+              "for a watchdog timing experiment"),
+    )
+    parser.add_argument(
+        "--early-replay-scale", type=float,
+        help=("override the scale through secure session 3; later card, tune, and "
+              "re-arm waits retain --replay-scale"),
+    )
     parser.add_argument(
         "--hold-after", type=int, default=120,
         help=("seconds to retain the same USB handle with heartbeats after "
@@ -115,6 +132,21 @@ def main() -> int:
     args = parser.parse_args()
     if args.seconds < 1:
         parser.error("--seconds must be positive")
+    if args.satellite_channel is not None:
+        try:
+            satellite_channel = parse_u3_channel(args.satellite_channel)
+        except ValueError as error:
+            parser.error(str(error))
+        if satellite_channel.system == "T":
+            parser.error("--satellite-channel must be a BS or CS selector")
+    else:
+        satellite_channel = None
+    if not 0 < args.replay_scale <= 1:
+        parser.error("--replay-scale must be in (0, 1]")
+    if args.early_replay_scale is None:
+        args.early_replay_scale = args.replay_scale
+    elif not 0 < args.early_replay_scale <= 1:
+        parser.error("--early-replay-scale must be in (0, 1]")
     if args.hold_after < 0:
         parser.error("--hold-after must not be negative")
     print(
@@ -127,14 +159,14 @@ def main() -> int:
     ensure_runtime(args)
 
     replay(args.hduc, sequence_for(commands, 4.275, 17.258),
-           args.bus, args.port, "fixed boot before session 1")
+           args.bus, args.port, "fixed boot before session 1", args.early_replay_scale)
     establish(args, 11, "session 1")
     replay(args.hduc, sequence_for(commands, 17.417, 19.039),
-           args.bus, args.port, "fixed setup between sessions 1 and 2")
+           args.bus, args.port, "fixed setup between sessions 1 and 2", args.early_replay_scale)
 
     establish(args, 8, "session 2")
     replay(args.hduc, sequence_for(commands, 19.196, 19.387),
-           args.bus, args.port, "session 2 before f018")
+           args.bus, args.port, "session 2 before f018", args.early_replay_scale)
     f018_8 = GOOD2_SESSIONS[8]["f018"]
     print(f"session 2: f018={f018_8.hex()}", flush=True)
     vendor_out(args, 0x07F0, 0xF018, f018_8)
@@ -142,16 +174,16 @@ def main() -> int:
     # 8 and were verified offline against the original routine.  Card IN data
     # is read from the current device and intentionally not replayed as data.
     replay(args.hduc, sequence_for(commands, 19.389, 22.188),
-           args.bus, args.port, "session 2 card exchange and fixed setup")
+           args.bus, args.port, "session 2 card exchange and fixed setup", args.early_replay_scale)
 
     establish(args, 7, "session 3")
     replay(args.hduc, sequence_for(commands, 22.365, 22.530),
-           args.bus, args.port, "session 3 before f018")
+           args.bus, args.port, "session 3 before f018", args.early_replay_scale)
     f018_7 = GOOD2_SESSIONS[7]["f018"]
     print(f"session 3: f018={f018_7.hex()}", flush=True)
     vendor_out(args, 0x07F0, 0xF018, f018_7)
     replay(args.hduc, sequence_for(commands, 22.548, 35.409),
-           args.bus, args.port, "session 3 card exchange and readiness wait")
+           args.bus, args.port, "session 3 card exchange and readiness wait", args.replay_scale)
 
     tune_window = [
         command for command in commands if 35.558 <= command["t"] <= 35.843
@@ -166,7 +198,7 @@ def main() -> int:
     )
     replay(args.hduc, sequence_for(tune_window, 35.558, 35.843),
            args.bus, args.port,
-           f"physical ch{args.channel} tune and PID filters")
+           f"physical ch{args.channel} tune and PID filters", args.replay_scale)
     run_hduc([
         str(args.hduc), "u3-monitor", "--vid", "0x3275", "--pid", "0x9010",
         "--seconds", "3", "--interval-ms", "500",
@@ -179,7 +211,13 @@ def main() -> int:
     # starts Bulk delivery.  Reproduce that state transition instead of
     # waiting on the known-idle first start.
     replay(args.hduc, sequence_for(commands, 35.890, 36.708),
-           args.bus, args.port, "first start and Windows re-arm cycle")
+           args.bus, args.port, "first start and Windows re-arm cycle", args.replay_scale)
+    if satellite_channel is not None:
+        replay(
+            args.hduc, satellite_tune_sequence(satellite_channel, entering=True),
+            args.bus, args.port,
+            f"bootstrap terrestrial to {satellite_channel.canonical} transition",
+        )
     if args.prepare_server:
         print("U3 re-arm complete; persistent server must queue EP81 then send 0x06", flush=True)
         return 0

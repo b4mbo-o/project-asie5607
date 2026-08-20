@@ -83,6 +83,10 @@ def main() -> int:
     parser.add_argument("--bus", type=int, default=int(os.environ.get("U3_BUS", "2")))
     parser.add_argument("--port", type=int, default=int(os.environ.get("U3_PORT", "2")))
     parser.add_argument("--channel", type=int, default=21)
+    parser.add_argument("--replay-scale", type=float, default=1.0,
+                        help="scale U3 startup inter-control waits for testing")
+    parser.add_argument("--early-replay-scale", type=float,
+                        help="scale only U3 startup before session-3 card exchange")
     parser.add_argument("--hduc", type=Path, default=DEFAULT_CTL)
     parser.add_argument("--firmware", type=Path, default=DEFAULT_FIRMWARE)
     parser.add_argument("--template", type=Path, default=DEFAULT_TEMPLATE)
@@ -97,11 +101,16 @@ def main() -> int:
 
     if not 13 <= args.channel <= 62:
         parser.error("--channel must be a terrestrial physical channel in 13..62")
+    if not 0 < args.replay_scale <= 1:
+        parser.error("--replay-scale must be in (0, 1]")
+    if args.early_replay_scale is not None and not 0 < args.early_replay_scale <= 1:
+        parser.error("--early-replay-scale must be in (0, 1]")
     if args.dry_run:
         print(
             f"bus={args.bus} port={args.port} channel={args.channel} "
             f"socket={args.socket} template={args.template} "
-            f"firmware={args.firmware}"
+            f"firmware={args.firmware} replay_scale={args.replay_scale} "
+            f"early_replay_scale={args.early_replay_scale}"
         )
         return 0
     for required in (args.hduc, args.firmware, args.template, RUNNER):
@@ -118,10 +127,13 @@ def main() -> int:
     initialize = [
         sys.executable, "-u", str(RUNNER),
         "--bus", str(args.bus), "--port", str(args.port),
-        "--channel", str(args.channel), "--prepare-server",
+        "--channel", str(args.channel), "--replay-scale", str(args.replay_scale),
+        "--prepare-server",
         "--hduc", str(args.hduc), "--firmware", str(args.firmware),
         "--template", str(args.template),
     ]
+    if args.early_replay_scale is not None:
+        initialize += ["--early-replay-scale", str(args.early_replay_scale)]
     print("+", " ".join(initialize), file=sys.stderr, flush=True)
     result = subprocess.run(initialize, cwd=ROOT)
     if result.returncode:

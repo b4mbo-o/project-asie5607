@@ -28,12 +28,13 @@ def sequence_for(commands: list[dict], start: float, end: float) -> str:
     return "\n".join(lines) + "\n"
 
 
-def replay(hduc: Path, sequence: str, bus: int, port: int, label: str) -> None:
+def replay(hduc: Path, sequence: str, bus: int, port: int, label: str,
+           scale: float = 1.0) -> None:
     print(f"replay {label}", flush=True)
     command = [
         str(hduc), "replay-control", "--vid", "0x3275", "--pid", "0x9010",
         "--bus", str(bus), "--port", str(port), "--file", "-",
-        "--proxy-retries", "2", "--quiet",
+        "--proxy-retries", "2", "--scale", str(scale), "--quiet",
     ]
     subprocess.run(command, input=sequence, text=True, check=True)
 

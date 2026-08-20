@@ -160,6 +160,19 @@ U3本体のB-CAS slotへ通常どおりカードを挿入します。HDUCとU3�
 scripts/u3d --bus 2 --port 2 --channel 21
 ```
 
+一部の新しい個体は、通常の初期化列ではsession 3の直前に短い期限切れで
+`LIBUSB_ERROR_PIPE`になることがあります。その場合は、session 3より前だけを短縮する
+profileを指定します。card交換以降と選局後の待機時間は通常値のままです。
+
+```bash
+scripts/u3d --bus 2 --port 2 --channel 21 \
+  --early-replay-scale 0.2
+```
+
+`--replay-scale`は初期化列全体を短縮する診断用の指定です。通常は使わず、上記の
+`--early-replay-scale`だけを指定してください。値は`0`より大きく`1`以下です。bus/portは
+環境依存なので、例の数字をそのまま流用しないでください。
+
 別terminalから地上波を録画できます。
 
 ```bash
